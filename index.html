@@ -76,6 +76,30 @@
             border-radius: 5px;
             display: inline-block;
         }
+        /* 在 Transaction Logs 区域外部添加边界感 */
+        .logs-container {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-top: 20px;
+            padding: 15px;
+            max-width: 100%; /* 最大宽度 */
+            overflow-x: auto; /* 添加水平滚动条 */
+        }
+
+        .logs {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* 每个日志项的样式 */
+        .log-item {
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+            font-family: 'Arial', sans-serif;
+            white-space: pre-wrap; /* 允许换行 */
+        }
+        
+
     </style>
 </head>
 
@@ -102,8 +126,10 @@
             <div id="tokenDisplay" class="display">
                 <h2>On sell NFTs</h2>
             </div>
-            <div class="logs">
-            
+            <div class="logs-container">
+                <h2>Transaction Logs</h2>
+                <div class="logs">
+                </div>
             </div>
         </div>
 
@@ -155,16 +181,16 @@
             } else {
                 let provider = new ethers.BrowserProvider(window.ethereum)
                 provider.getSigner().then((signer) => {
-                    printLog("welcome " + signer.address + " to NFT market");
+                    printLog("welcome " + signer.address + " to NFT market !");
                     updateWalletInfo(signer);//更新数据
                     initNFTContract();//需要构建对象
                     refreshState();
-                    // 登录成功后，监控Bank的所有操作事件
-                    //let start = 13
-                    //getLogs(start, start + 2)
+                //动态展示list， buy 日志   
+                    let start = 13
+                    getLogs(start, start + 2)
                 }).catch(err => {
-                    //console.log(Object.keys(err))
-                    //printLog(err.reason ? err.reason : err);
+                    console.log(Object.keys(err))
+                    printLog(err.reason ? err.reason : err);
                 });
             }
 
@@ -183,11 +209,6 @@
         // 更新链上的状态数据
         async function refreshState() {
             if (!wallet) return;
-
-            // 读取ETH 余额
-            const balance = await wallet.provider.getBalance(wallet.address, "latest");
-            printLog(`You balance is ${ethers.formatEther(balance)}ETH`);
-
         }
 
         //调用合约，上架NFT
@@ -195,25 +216,24 @@
             if (!nftMarketAddress) {
                 return;
             }
-            
             let Price = document.getElementById('inputPrice_list').value;
             let tokenID = document.getElementById('inputTokenID_list').value;
             if (Price <= 0) {
                 printLog("Invalid price set!");
                 return;
             }
-
             //上架之前检查该NFT是否已经授权
             const nftContract = new ethers.Contract(nftAddress, nftAbi, wallet)
             let approvedAddress = await nftContract.getApproved(tokenID);
             //没有授权先进行授权
             if (approvedAddress !== nftMarketAddress) {
-                await nftContract.approve(nftMarketAddress, tokenID)
+                var tx = await nftContract.approve(nftMarketAddress, tokenID)
+                await tx.wait()
             }
             const result = await nftMarketContract.sellNFTs(tokenID, Price);
+            await result.wait()
             displayToken(tokenID);
             printTx(result);
-            //displayToken(tokenID);
         }
 
         //调用合约，购买NFT
@@ -223,9 +243,6 @@
             const buyPrice = document.getElementById("inputPrice_buy").value;
             const tokenID = document.getElementById("inputTokenID_buy").value;
            
-            const preOwner =  await nftMarketContract.viewOwner(tokenID);
-            console.log("preOwner", preOwner)
-            
             const sellPrice = await nftMarketContract.viewPrice(tokenID);
             if (parseFloat(buyPrice) != sellPrice) {
                 printLog("Invalid price set!");
@@ -239,22 +256,21 @@
                 }
                 var tx=await nftMarketContract.buyNFT(tokenID, buyPrice);
                 await tx.wait()
-            }
+                printTx(tx);
 
-            const nowOwner = await nftMarketContract.viewOwner(tokenID);
-            console.log("nowOwner", nowOwner)
+            }
 
             removeToken(tokenID);
         }
         
         //前端页面加入上架NFT
         async function displayToken(tokenID) {
-        var tokenDisplay = document.getElementById('tokenDisplay');
-        var tokenItem = document.createElement('div');
-        tokenItem.classList.add('tokenItem');
-        tokenItem.innerText = `Token ID: ${tokenID}`;
-        tokenDisplay.appendChild(tokenItem);
-    }
+            var tokenDisplay = document.getElementById('tokenDisplay');
+            var tokenItem = document.createElement('div');
+            tokenItem.classList.add('tokenItem');
+            tokenItem.innerText = `Token ID: ${tokenID}`;
+            tokenDisplay.appendChild(tokenItem);
+        }
 
         // 前端页面移除被购 NFT
         async function removeToken(tokenID) {
@@ -268,6 +284,7 @@
             }
         }
 
+        //动态展示所有NFT Market中的 List、Buy 日志
         async function getLogs(fromBlock, toBlock) {
 
             const userAddress = wallet.address;
@@ -281,38 +298,30 @@
                 //     // [bankContract.getEvent("Withdraw").fragment.topicHash, ethers.zeroPadValue(userAddress, 32)],
                 // ]
             }
-
-
             // 检查 toBlock 是不是已经是最新的区块
-
             let currentBlock = await wallet.provider.getBlockNumber();
-
             // 如果是则获取到当前即可
             if (filter.toBlock > currentBlock) {
                 filter.toBlock = currentBlock;
             }
-
             wallet.provider.getLogs(filter).then(logs => {
                 if (logs.length > 0) decodeEvents(logs);
-
                 // 2秒后继续取数据
                 if (currentBlock <= fromBlock && logs.length == 0) {
                     console.log("begin monitor")
                     // 如果没有获取到新的数据，可能是区块没有出现，继续retry
-                    // 方式1，继续轮训
-                    // setTimeout(() => {
-                    //     getLogs(fromBlock, toBlock)
-                    // }, 2000);
+                    //方式1，继续轮训
+                    setTimeout( () => {getLogs(fromBlock, toBlock)}, 2000);
                     // 方式2: 监听
-                    bankContract.on("Deposit",function(a0,a1,event){
-                        decodeEvents([event.log]);
-                    })
-                    bankContract.on("Withdraw",function(a0,a1,event){
-                        decodeEvents([event.log]);
-                    })
-                    bankContract.on("Top3Changed",function(a0,a1,a3,event){
-                        decodeEvents([event.log]);
-                    })
+                    //bankContract.on("Deposit",function(a0,a1,event){
+                    //  decodeEvents([event.log]);
+                    // })
+                    // bankContract.on("Withdraw",function(a0,a1,event){
+                    //     decodeEvents([event.log]);
+                    // })
+                    // bankContract.on("Top3Changed",function(a0,a1,a3,event){
+                    //     decodeEvents([event.log]);
+                    // })
                 } else {
                     // 如果有数据则继续
                     getLogs(toBlock + 1, toBlock + 1 + 2);
@@ -323,28 +332,22 @@
 
         function decodeEvents(logs) {
 
-            const depositEvent = bankContract.getEvent("Deposit").fragment
-            const withdrawEvent = bankContract.getEvent("Withdraw").fragment
-            const top3ChangedEvent = bankContract.getEvent("Top3Changed").fragment
+            const buySuccessEvent = nftMarketContract.getEvent("BuySuccess").fragment
+            const listSuccessEvent = nftMarketContract.getEvent("ListSuccess").fragment
 
             for (var i = 0; i < logs.length; i++) {
                 const item = logs[i]
-                const eventId = item.topics[0] // topic0
-                if (eventId == depositEvent.topicHash) {// Deposit event Id
-                    const data = bankContract.interface.decodeEventLog(depositEvent, item.data, item.topics)
-                    printLog(`Block:${item.blockNumber} ${data.acct} deposit ${ethers.formatEther(data.Price)} ETH (${item.transactionHash})`)
-                } else if (eventId == withdrawEvent.topicHash) {// Deposit event Id
-                    const data = bankContract.interface.decodeEventLog(withdrawEvent, item.data, item.topics)
-                    printLog(`Block:${item.blockNumber} ${data.acct} withdraw ${ethers.formatEther(data.Price)} ETH (${item.transactionHash})`)
+                const eventId = item.topics[0]  // topic0
+                if (eventId == buySuccessEvent.topicHash) {// buySuccess event Id
+                    const data = nftMarketContract.interface.decodeEventLog(buySuccessEvent, item.data, item.topics)
+                    printLog(`Block:${item.blockNumber} The customer ${data.buyer}  buy NFT${data.tokenID}  (${item.transactionHash})`)
+                } else if (eventId == listSuccessEvent.topicHash) {
+                    const data = nftMarketContract.interface.decodeEventLog(listSuccessEvent, item.data, item.topics)
+                    printLog(`Block:${item.blockNumber} The NFT${data.tokenID} is listed at the price of ${data.amount} btc (${item.transactionHash})`)
 
-                } if (eventId == top3ChangedEvent.topicHash) {// Deposit event Id
-                    const data=bankContract.interface.decodeEventLog(top3ChangedEvent,item.data,item.topics)
-                    printLog(`Block:${item.blockNumber} Update Top3 ${  data.t0 }、 ${  data.t1 }、 ${  data.t2 }`)
-                }
+                } 
             }
-
         }
-
         // 打印交易执行过程信息
         async function printTx(result) {
             printLog("Tx hash:" + result.hash)
@@ -359,11 +362,13 @@
         }
 
         function printLog(msg) {
-            let p = document.createElement("p");
-            p.textContent = msg
-            document.getElementsByClassName("logs")[0].appendChild(p)
-        }
+            let logContainer = document.querySelector('.logs');
+            let logItem = document.createElement("div");
+            logItem.classList.add("log-item");
 
+            logItem.textContent = msg;
+            logContainer.appendChild(logItem);
+        }
 
     </script>
 </body>

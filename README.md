@@ -21,3 +21,9 @@
 4.检查日志显示，执行购买操作以后owner的变化：
 
 ![image](https://github.com/Bachamht/Dapp_nftMarket/blob/main/images/8d8c4b89f1150ba265b6925507f62ab8.png)
+
+
+
+5.增加事件监听功能，动态显示BuySuccess，ListSuccess事件：
+
+![image]()
